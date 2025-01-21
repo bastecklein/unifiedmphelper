@@ -1095,3 +1095,12 @@ function encodeLanSocketPacket(dataObj) {
 function chunkString(str, length) {
     return str.match(new RegExp(".{1," + length + "}", "g"));
 }
+
+export function getClientId() {
+    return clientUid;
+}
+
+export default {
+    GameLobby,
+    getClientId
+};
