@@ -539,7 +539,7 @@ function sendMessage(message, to = null) {
         return;
     }
 
-    const chunks = chunkString(sendData, RTC_CHUNK_SIZE);
+    const chunks = commonHelpers.chunkString(sendData, RTC_CHUNK_SIZE);
 
     if(server.isLocal && !to) {
         for(let cid in server.clients) {
@@ -1090,10 +1090,6 @@ async function onClientIce(lobby, serverId, remoteClient, ice) {
 function encodeLanSocketPacket(dataObj) {
     const str = JSON.stringify(dataObj);
     return ":#:" + str + "#:#";
-}
-
-function chunkString(str, length) {
-    return str.match(new RegExp(".{1," + length + "}", "g"));
 }
 
 export function getClientId() {
