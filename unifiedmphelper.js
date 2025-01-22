@@ -17,23 +17,24 @@ const USE_ICE_SERVERS = [
     {urls: "stun:stun4.l.google.com:19302"}
 ];
 
-// if library becomes public,
-// this should be removed
-const APE_SIGNALING_SERVER = "https://signaling.ape-apps.com:2736";
+try {
+    let clientUid = localStorage.getItem("umph-client-uid-v2");
 
-let clientUid = localStorage.getItem("umph-client-uid-v2");
-
-if(!clientUid || clientUid == "0" || clientUid.trim().length == 0) {
-    clientUid = commonHelpers.guid();
-    localStorage.setItem("umph-client-uid-v2", clientUid);
+    if(!clientUid || clientUid == "0" || clientUid.trim().length == 0) {
+        clientUid = commonHelpers.guid();
+        localStorage.setItem("umph-client-uid-v2", clientUid);
+    }
+} catch(ex) {
+    console.log(ex);
 }
+
 
 export function GameLobby(options) {
     this.id = commonHelpers.guid();
 
     this.name = null;
     this.listener = null;
-    this.signalingServer = APE_SIGNALING_SERVER;
+    this.signalingServer = null;
 
     this.socket = null;
 
