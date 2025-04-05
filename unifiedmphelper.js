@@ -7,6 +7,7 @@ const SECOND = 1000;
 const MINUTE = SECOND * 60;
 
 const QUEUE_THRESH = 2024;
+const DEF_PING_INTERVAL = 5000;
 
 const USE_ICE_SERVERS = [
     {urls: "stun:stun.l.google.com:19302"},
@@ -16,6 +17,16 @@ const USE_ICE_SERVERS = [
     {urls: "stun:stun3.l.google.com:19302"},
     {urls: "stun:stun4.l.google.com:19302"}
 ];
+
+let wacUtils = null;
+let hasiOSHost = false;
+let hasAndroidHost = false;
+
+if(window.wacUtils2) {
+    wacUtils = window.wacUtils2;
+}
+
+let lanScanCallbacks = {};
 
 let clientUid = null;
 
@@ -30,139 +41,197 @@ if(typeof localStorage === "undefined") {
     }
 }
 
-export function GameLobby(options) {
-    this.id = commonHelpers.guid();
+export class GameLobby {
 
-    this.name = null;
-    this.listener = null;
-    this.signalingServer = null;
+    constructor(options) {
 
-    this.socket = null;
+        this.options = options || {};
 
-    this.connected = false;
-    this.wasClosed = false;
+        this.id = commonHelpers.guid();
 
-    this.refresh = refreshLobby;
-    this.postCustomData = postCustomLobbyData;
-    this.createServer = createServer;
-    this.joinServer = joinServer;
-    this.close = closeLobby;
-    this.connect = bootUpLobby;
+        this.name = this.options.name || null;
+        this.listener = this.options.listener || null;
+        this.signalingServer = this.options.signalingServer || null;
+        this.port = this.options.port || 0;
 
-    this.remoteServers = {};
-    this.localServers = {};
-
-    this.gameTimeoutChecker = null;
-
-    if(options) {
-        if(options.name) {
-            this.name = options.name;
+        if(!wacUtils && !hasiOSHost && !hasAndroidHost) {
+            this.port = 0;
         }
 
-        if(options.listener) {
-            this.listener = options.listener;
-        }
-
-        if(options.signalingServer) {
-            this.signalingServer = options.signalingServer;
-        }
-    }
-
-    if(this.name && this.listener && this.signalingServer) {
-        this.connect();
-    }
-}
-
-function LocalServer() {
-    this.id = commonHelpers.guid();
-
-    this.isLocal = true;
-
-    this.close = closeLocalServer;
-    this.updateExtras = updateServerExtras;
-    this.sendMessage = sendMessage;
-    this.pingAll = pingAll;
-    this.approveJoin = approveJoin;
-
-    this.active = true;
-
-    // local server is always connected to itself
-    this.connected = true;
-
-    this.listener = null;
-    this.extras = null;
-    this.lobby = null;
-
-    this.clients = {};
-
-    this.pendingMessages = {};
-
-    const server = this;
+        this.socket = null;
     
-    setTimeout(function() {
-        server.pingAll();
-    }, 4000);
+        this.connected = false;
+        this.wasClosed = false;
+
+        this.remoteServers = {};
+        this.localServers = {};
+
+        this.gameTimeoutChecker = null;
+
+        if(this.name && this.listener && (this.signalingServer || this.port)) {
+            this.connect();
+        }
+    }
+
+    refresh(withReping = false) {
+        refreshLobby(this, withReping);
+    }
+
+    postCustomData(data) {
+        postCustomLobbyData(this, data);
+    }
+
+    createServer(listener, useId) {
+        return createServer(this, listener, useId);
+    }
+
+    joinServer(id, listener) {
+        return joinServer(this, id, listener);
+    }
+
+    close() {
+        closeLobby(this);
+    }
+
+    connect() {
+        bootUpLobby(this);
+    }
 }
 
-function RemoteServer() {
-    this.id = null;
-    this.extras = null;
-    this.reportedData = null;
-    this.lobby = null;
+class LocalServer {
 
-    this.isLocal = false;
+    constructor(lobby) {
+        const server = this;
 
-    this.lastReport = new Date().getTime();
-    this.pingTime = 0;
-    this.pingRate = 0;
-    this.missedReports = 0;
-    this.missedReportTimeout = null;
-    this.active = true;
+        this.id = commonHelpers.guid();
 
-    this.listener = null;
-    this.connected = false;
-    this.status = "idle";
+        this.isLocal = true;
 
-    this.client = null;
-    this.dataChannel = null;
-    this.queue = [];
+        this.active = true;
 
-    this.ping = pingServer;
-    this.connect = connectToServer;
-    this.sendMessage = sendMessage;
-    this.close = closeRemoteServer;
+        // local server is always connected to itself
+        this.connected = true;
 
-    this.pendingMessages = {};
+        this.listener = null;
+        this.extras = null;
+        this.lobby = lobby;
+        this.tcpSocketId = null;
+
+        if(lobby.port) {
+            bootUpLANServer(this, lobby.port);
+        }
+
+        this.clients = {};
+
+        this.incomingBuffers = {};
+
+        
+        
+        setTimeout(function() {
+            server.pingAll();
+        }, DEF_PING_INTERVAL);
+    }
+
+    close() {
+        closeLocalServer(this);
+    }
+    
+    updateExtras(extras) {
+        updateServerExtras(this, extras);
+    }
+
+    sendMessage(message, to = null) {
+        sendMessage(this, message, to);
+    }
+
+    pingAll() {
+        pingAll(this);
+    }
+
+    approveJoin(remoteId) {
+        approveJoin(this, remoteId);
+    }
 }
 
-function bootUpLobby() {
-    const lobby = this;
+class RemoteServer {
+
+    constructor() {
+        this.id = null;
+        this.extras = null;
+        this.reportedData = null;
+        this.lobby = null;
+    
+        this.isLocal = false;
+    
+        this.lastReport = new Date().getTime();
+        this.pingTime = 0;
+        this.pingRate = 0;
+        this.missedReports = 0;
+        this.missedReportTimeout = null;
+        this.active = true;
+    
+        this.listener = null;
+        this.connected = false;
+        this.status = "idle";
+        this.type = "rtc";
+    
+        this.client = null;
+        this.dataChannel = null;
+        this.queue = [];
+
+        this.incomingBuffers = {};
+    }
+
+    ping() {
+        pingServer(this);
+    }
+
+    connect(listener) {
+        connectToServer(this, listener);
+    }
+
+    sendMessage(message, to = null) {
+        sendMessage(this, message, to);
+    }
+
+    close() {
+        closeRemoteServer(this);
+    }
+}
+
+function bootUpLobby(lobby) {
 
     if(lobby.connected) {
         return;
     }
 
-    lobby.socket = io(lobby.signalingServer, {
-        secure: true,
-        rejectUnauthorized: false
-    });
+    if(lobby.signalingServer) {
+        lobby.socket = io(lobby.signalingServer, {
+            secure: true,
+            rejectUnauthorized: false
+        });
+    
+        lobby.socket.on("connect",function() {
+            onSignalSocketConnect(lobby);
+        });
+    
+        lobby.socket.on("message", function(message) {
+            onSignalSocketMessage(lobby, message);
+        });
+    
+        lobby.socket.on("disconnect", function() {
+            lobby.connected = false;
+    
+            if(lobby.listener) {
+                lobby.listener("disconnected");
+            }
+        });
+    }
 
-    lobby.socket.on("connect",function() {
-        onSignalSocketConnect(lobby);
-    });
-
-    lobby.socket.on("message", function(message) {
-        onSignalSocketMessage(lobby, message);
-    });
-
-    lobby.socket.on("disconnect", function() {
-        lobby.connected = false;
-
-        if(lobby.listener) {
-            lobby.listener("disconnected");
-        }
-    });
-
+    if(lobby.port && wacUtils) {
+        lobby.connected = true;
+    }
+    
     setTimeout(function() {
         lobby.refresh(true);
     }, 3000);
@@ -270,16 +339,58 @@ function postLobbyMessage(lobby, data) {
     });
 }
 
-function refreshLobby(withReping = false) {
-    const lobby = this;
+function refreshLobby(lobby, withReping = false) {
 
-    if(!lobby || !lobby.socket || !lobby.connected) {
+    if(!lobby || !lobby.connected) {
         return;
     }
 
-    postLobbyMessage(lobby, {
-        m: "roomAnnounce"
-    });
+    if(lobby.socket) {
+        postLobbyMessage(lobby, {
+            m: "roomAnnounce"
+        });
+    }
+    
+    if(lobby.port) {
+        if(wacUtils) {
+
+            const onConnectedName = "onWAClanScanDone" + scanId;
+            const scanId = commonHelpers.guid();
+            
+            const callback = function(ips) {
+
+                if(ips && ips.length > 0) {
+                    for(let i = 0; i < ips.length; i++) {
+                        const ip = ips[i];
+                    }
+                }
+
+                if(wacUtils.removeCustomListener) {
+                    wacUtils.removeCustomListener(onConnectedName);
+                }
+            };
+
+            lanScanCallbacks[scanId] = callback;
+            
+            wacUtils.setCustomListener(onConnectedName, function(e, scanResult) {
+
+                if(scanResult) {
+                    if(callback) {
+                        callback(scanResult);
+                    }
+                } else {
+                    if(callback) {
+                        callback([]);
+                    }
+                }
+            });
+
+            wacUtils.ipcSend("scanLocalNetwork", {
+                port: lobby.port,
+                id: scanId
+            });
+        }
+    }
 
     if(withReping) {
         setTimeout(lobby.refresh, 6000);
@@ -287,8 +398,7 @@ function refreshLobby(withReping = false) {
     
 }
 
-function postCustomLobbyData(data) {
-    const lobby = this;
+function postCustomLobbyData(lobby, data) {
 
     if(!lobby || !lobby.socket) {
         return;
@@ -301,15 +411,13 @@ function postCustomLobbyData(data) {
     });
 }
 
-function createServer(listener, useId) {
-    const lobby = this;
+function createServer(lobby, listener, useId) {
 
     if(!lobby) {
         return;
     }
 
-    const server = new LocalServer();
-    server.lobby = lobby;
+    const server = new LocalServer(lobby);
 
     if(useId) {
         server.id = useId;
@@ -336,8 +444,7 @@ function onLobbyInfoRequest(lobby) {
     }
 }
 
-function closeRemoteServer() {
-    const server = this;
+function closeRemoteServer(server) {
 
     if(!server) {
         return;
@@ -356,8 +463,7 @@ function closeRemoteServer() {
     server.queue = [];
 }
 
-function closeLocalServer() {
-    const server = this;
+function closeLocalServer(server) {
 
     if(!server) {
         return;
@@ -373,6 +479,12 @@ function closeLocalServer() {
         shutDownRemoteClient(client.rtc);
     }
 
+    if(server.tcpSocketId) {
+        if(wacUtils) {
+            wacUtils.ipcInvoke("closeTcpSocket", server.tcpSocketId);
+        }
+    }
+
     delete server.lobby.localServers[server.id];
 
     server.active = false;
@@ -380,8 +492,7 @@ function closeLocalServer() {
     server.clients = {};
 }
 
-function joinServer(id, listener) {
-    const lobby = this;
+function joinServer(lobby, id, listener) {
 
     if(!lobby) {
         return null;
@@ -402,8 +513,7 @@ function joinServer(id, listener) {
     return server;
 }
 
-function closeLobby() {
-    const lobby = this;
+function closeLobby(lobby) {
 
     if(!lobby) {
         return;
@@ -497,8 +607,7 @@ function onRemoteServerInfo(lobby, data) {
     server.ping();
 }
 
-function updateServerExtras(extras) {
-    const server = this;
+function updateServerExtras(server, extras) {
 
     if(!server) {
         return;
@@ -525,23 +634,103 @@ function updateServerExtras(extras) {
     });
 }
 
-function sendMessage(message, to = null) {
-    const server = this;
+function chunkArrayBuffer(buffer, chunkSize) {
+    const result = [];
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < view.length; i += chunkSize) {
+        // buffer.slice() returns a new ArrayBuffer
+        result.push(buffer.slice(i, i + chunkSize));
+    }
+    return result;
+}
+
+// Modified encode function for string/JSON messages.
+function encodeLanSocketPacketBinary(jsonString, type) {
+    const encoder = new TextEncoder();
+    const payload = encoder.encode(jsonString);
+    // Use type 0 for JSON/string data.
+    return wrapMessageWithHeader(payload, type);
+}
+
+// Modified wrap function for raw ArrayBuffer messages.
+function wrapArrayBufferWithHeader(buffer) {
+    // Use type 1 for raw array buffer.
+    return wrapMessageWithHeader(new Uint8Array(buffer), 2);
+}
+
+function isWrapped(buffer) {
+    // Must be an ArrayBuffer and at least 5 bytes (header)
+    if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 5) {
+        return false;
+    }
+
+    const view = new DataView(buffer);
+    const type = view.getUint8(0);
+    // Check that type is within expected values (0 for string/JSON, 1 for object, 2 for raw ArrayBuffer)
+    if (type !== 0 && type !== 1 && type !== 2) {
+        return false;
+    }
+
+    const payloadLength = view.getUint32(1);
+    // Expect the total length to be header (5 bytes) plus the payload length.
+    if (payloadLength !== buffer.byteLength - 5) {
+        return false;
+    }
+
+    return true;
+}
+
+// New header wrapping function that includes a type indicator.
+// type: 0 => string, 1=> object 2 => raw ArrayBuffer. You can add more types as needed.
+function wrapMessageWithHeader(buffer, type) {
+    // Create a 5-byte header: 1 byte for type, 4 bytes for payload length.
+    const header = new ArrayBuffer(5);
+    const headerView = new DataView(header);
+    headerView.setUint8(0, type);
+    headerView.setUint32(1, buffer.byteLength);
+    const combined = new Uint8Array(5 + buffer.byteLength);
+    combined.set(new Uint8Array(header), 0);
+    combined.set(new Uint8Array(buffer), 5);
+    return combined.buffer;
+}
+
+function sendMessage(server, message, to = null) {
 
     if(!server || !server.connected) {
         return;
     }
 
     let sendData = null;
+    let chunks = [];
+    let useStrType = 0;
+
+    if(!message) {
+        return;
+    }
+
+    // If message is an object (except ArrayBuffer), stringify it.
+    if (typeof message === "object" && !(message instanceof ArrayBuffer)) {
+        message = JSON.stringify(message);
+        useStrType = 1;
+    }
+    
+    // If string, encode it (will be wrapped with type indicator 0).
+    if (typeof message === "string") {
+        message = encodeLanSocketPacketBinary(message, useStrType);
+    }
+    
+    // If it's an ArrayBuffer, wrap it if not already wrapped (with type indicator 1).
+    if (message instanceof ArrayBuffer && !isWrapped(message)) {
+        message = wrapArrayBufferWithHeader(message);
+    }
 
     try {
-        sendData = encodeLanSocketPacket(message);
+        sendData = message;
+        chunks = chunkArrayBuffer(sendData, RTC_CHUNK_SIZE);
     } catch(ex) {
         console.log(ex);
         return;
     }
-
-    const chunks = commonHelpers.chunkString(sendData, RTC_CHUNK_SIZE);
 
     if(server.isLocal && !to) {
         for(let cid in server.clients) {
@@ -588,7 +777,21 @@ function sendMessage(message, to = null) {
 }
 
 function processQueueItem(client) {
-    if(client.dataChannel.bufferedAmount > QUEUE_THRESH || !client.queue || client.queue.length == 0) {
+    if(!client.dataChannel || !client.queue || client.queue.length == 0) {
+        return;
+    }
+
+    if(client.dataChannel.bufferedAmount > QUEUE_THRESH) {
+        if("requestIdleCallback" in window) {
+            requestIdleCallback(function() {
+                processQueueItem(client);
+            });
+        } else {
+            setTimeout(function() {
+                processQueueItem(client);
+            }, 50);
+        }
+
         return;
     }
 
@@ -596,13 +799,19 @@ function processQueueItem(client) {
 
     client.dataChannel.send(nextMsg);
 
-    processQueueItem(client);
+    if("requestIdleCallback" in window) {
+        requestIdleCallback(function() {
+            processQueueItem(client);
+        });
+    } else {
+        setTimeout(function() {
+            processQueueItem(client);
+        }, 0);
+    }
 }
 
-function pingAll() {
+function pingAll(server) {
         
-    const server = this;
-
     if(!server || !server.active) {
         return;
     }
@@ -639,7 +848,7 @@ function pingAll() {
 
     setTimeout(function() {
         server.pingAll();
-    }, 4000);
+    }, DEF_PING_INTERVAL);
 }
 
 function shutDownRemoteClient(rtcConnection) {
@@ -652,8 +861,7 @@ function shutDownRemoteClient(rtcConnection) {
     }
 }
 
-function approveJoin(remoteId) {
-    const server = this;
+function approveJoin(server, remoteId) {
 
     if(!server) {
         return;
@@ -670,8 +878,7 @@ function approveJoin(remoteId) {
     server.sendMessage("aj", remoteId);
 }
 
-function pingServer() {
-    const server = this;
+function pingServer(server) {
 
     if(!server) {
         return;
@@ -701,10 +908,8 @@ function clearMissedReportTimeout(server) {
     server.missedReportTimeout = null;
 }
 
-function connectToServer(listener) {
+function connectToServer(server, listener) {
         
-    const server = this;
-
     if(!server) {
         return;
     }
@@ -776,7 +981,8 @@ async function beginPeerConnection(lobby, serverId, remoteClient) {
         approved: false,
         type: "rtc",
         ip: null,
-        queue: []
+        queue: [],
+        incomingBuffers: {}
     };
 
     client.onnegotiationneeded = async function() {
@@ -841,48 +1047,64 @@ async function beginPeerConnection(lobby, serverId, remoteClient) {
     };
 }
 
-function onMessageFromRtc(server, from, message) {
+function onMessageFromRtc(server, from, chunk) {
     if(!server || !server.listener) {
         return;
     }
 
-    let fullIncomingMessage = null;
+    // Create or update the buffer for this sender.
+    if (!server.incomingBuffers[from]) {
+        server.incomingBuffers[from] = { buffer: [], totalLength: null, currentLength: 0, type: null };
+    }
 
-    if(message.indexOf(":#:") == 0) {
-        server.pendingMessages[from] = message;
+    const senderBuffer = server.incomingBuffers[from];
+
+    // If this is the first chunk, extract type and total length.
+    if (senderBuffer.totalLength === null) {
+        const view = new DataView(chunk);
+        senderBuffer.type = view.getUint8(0); // 0 for JSON/string, 1 for ArrayBuffer
+        senderBuffer.totalLength = view.getUint32(1);
+        // Add payload starting from byte 5.
+        senderBuffer.buffer.push(chunk.slice(5));
+        senderBuffer.currentLength += chunk.byteLength - 5;
     } else {
-        server.pendingMessages[from] += message;
+        senderBuffer.buffer.push(chunk);
+        senderBuffer.currentLength += chunk.byteLength;
     }
 
-    if(!message.endsWith("#:#")) {
-        return;
+    // Reassemble if we've received enough data.
+    if (senderBuffer.totalLength !== null && senderBuffer.currentLength >= senderBuffer.totalLength) {
+        const fullBuffer = new Uint8Array(senderBuffer.totalLength);
+        let offset = 0;
+        for (const part of senderBuffer.buffer) {
+            fullBuffer.set(new Uint8Array(part), offset);
+            offset += part.byteLength;
+        }
+        
+        // Process based on type.
+        if (senderBuffer.type === 0) {
+            // For JSON/string messages.
+            const decoder = new TextDecoder();
+            const jsonString = decoder.decode(fullBuffer);
+
+            if(senderBuffer.type == 1) {
+                // If it's an object, decode it.
+                try {
+                    const obj = JSON.parse(jsonString);
+                    handleDecodedMessage(server, from, obj);
+                } catch(e) {
+                    console.error("Error decoding message:", e);
+                }
+            } else {
+                // If it's a string, handle it directly.
+                handleDecodedMessage(server, from, jsonString);
+            }
+        } else if (senderBuffer.type === 2) {
+            // For raw ArrayBuffer messages.
+            handleDecodedMessage(server, from, fullBuffer.buffer);
+        }
+        delete server.incomingBuffers[from];
     }
-
-    fullIncomingMessage = server.pendingMessages[from];
-
-    if(!fullIncomingMessage) {
-        return;
-    }
-
-    const decodedObj = decodeLanSocketPacket(fullIncomingMessage);
-
-    if(decodedObj) {
-        handleDecodedMessage(server, from, decodedObj);
-    }
-    
-}
-
-function decodeLanSocketPacket(packet) {
-
-    const cleaned = packet.substring(3,packet.length - 3);
-
-    try {
-        const obj = JSON.parse(cleaned);
-        return obj;
-    } catch(ex) {
-        return null;
-    }
-
 }
 
 function handleDecodedMessage(server, from, message) {
@@ -1089,9 +1311,46 @@ async function onClientIce(lobby, serverId, remoteClient, ice) {
     }
 }
 
-function encodeLanSocketPacket(dataObj) {
-    const str = JSON.stringify(dataObj);
-    return ":#:" + str + "#:#";
+function bootUpLANServer(server, port) {
+    if(!server || !port) {
+        return;
+    }
+
+    if(wacUtils) {
+        wacUtils.ipcInvoke("createTCPServer", port).then(function(socketId) {
+            server.tcpSocketId = socketId;
+
+            const listenerName = "onWACTCPmessage" + socketId;
+
+            wacUtils.setCustomListener(listenerName, function(e, data) {
+                if(data && data.type == "message") {
+                    const from = data.client || null;
+                    const to = data.server || null;
+                    const data = data.data || null;
+
+                    if(to != server.tcpSocketId) {
+                        return;
+                    }
+
+                    if(!from || !data) {
+                        return;
+                    }
+
+                    let client = server.clients[from];
+
+                    if(!client) {
+                        client = new RemoteServer();
+                        client.id = from;
+                        client.lobby = server.lobby;
+                        client.listener = server.listener;
+                        client.tcpSocketId = server.tcpSocketId;
+                        client.type = "tcp";
+                        server.clients[from] = client;
+                    }
+                }
+            });
+        });
+    }
 }
 
 export function getClientId() {
