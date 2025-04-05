@@ -715,7 +715,7 @@ function sendMessage(server, message, to = null) {
 
     // If message is an object (except ArrayBuffer), stringify it.
     if (typeof message === "object" && !(message instanceof ArrayBuffer)) {
-        message = JSON.stringify(message);
+        message = JSON.stringify(message, bufferReplacer);
         useStrType = MESSAGE_TYPES.OBJECT;
     }
     
@@ -1095,7 +1095,7 @@ function onMessageFromRtc(server, from, chunk) {
             if(senderBuffer.type == MESSAGE_TYPES.OBJECT) {
                 // If it's an object, decode it.
                 try {
-                    const obj = JSON.parse(jsonString);
+                    const obj = JSON.parse(jsonString, bufferReviver);
                     handleDecodedMessage(server, from, obj);
                 } catch(e) {
                     console.error("Error decoding message:", e);
@@ -1356,6 +1356,46 @@ function bootUpLANServer(server, port) {
             });
         });
     }
+}
+
+// Converts an ArrayBuffer to a base64 string.
+function arrayBufferToBase64(buffer) {
+    const uint8 = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
+    }
+    return btoa(binary);
+}
+
+// Converts a base64 string back to an ArrayBuffer.
+function base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+// JSON replacer that encodes ArrayBuffers.
+function bufferReplacer(key, value) {
+    if(value instanceof ArrayBuffer) {
+        return {
+            __type: "ArrayBuffer",
+            data: arrayBufferToBase64(value)
+        };
+    }
+    return value;
+}
+
+// JSON reviver that decodes base64 strings to ArrayBuffers.
+function bufferReviver(key, value) {
+    if(value && value.__type === "ArrayBuffer" && typeof value.data === "string"){
+        return base64ToArrayBuffer(value.data);
+    }
+    return value;
 }
 
 export function getClientId() {
