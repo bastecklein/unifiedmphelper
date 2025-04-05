@@ -22,9 +22,12 @@ let wacUtils = null;
 let hasiOSHost = false;
 let hasAndroidHost = false;
 
-if(window.wacUtils2) {
-    wacUtils = window.wacUtils2;
+if(typeof window !== "undefined") {
+    if(window.wacUtils2) {
+        wacUtils = window.wacUtils2;
+    }
 }
+
 
 let lanScanCallbacks = {};
 
