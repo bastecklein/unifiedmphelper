@@ -1,6 +1,6 @@
 {
     "name": "unifiedmphelper",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Library for facilitating cross platform p2p multiplayer gaming.",
     "keywords": ["networking", "library", "ape apps"],
     "homepage": "https://www.ape-apps.com",
@@ -25,7 +25,7 @@
     "config": {},
     "dependencies": {
         "common-helpers": "git+ssh://git@github.com:bastecklein/common-helpers.git#main",
-        "socket.io-client": "^4.1.3"
+        "socket.io-client": "*"
     },
     "devDependencies": {},
     "private": false,
