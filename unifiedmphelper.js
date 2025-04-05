@@ -9,6 +9,12 @@ const MINUTE = SECOND * 60;
 const QUEUE_THRESH = 2024;
 const DEF_PING_INTERVAL = 5000;
 
+const MESSAGE_TYPES = {
+    STRING: 0,
+    OBJECT: 1,
+    ARRAY_BUFFER: 2
+};
+
 const USE_ICE_SERVERS = [
     {urls: "stun:stun.l.google.com:19302"},
     {urls: "stun:stun.stunprotocol.org:3478"},
@@ -651,14 +657,12 @@ function chunkArrayBuffer(buffer, chunkSize) {
 function encodeLanSocketPacketBinary(jsonString, type) {
     const encoder = new TextEncoder();
     const payload = encoder.encode(jsonString);
-    // Use type 0 for JSON/string data.
     return wrapMessageWithHeader(payload, type);
 }
 
 // Modified wrap function for raw ArrayBuffer messages.
 function wrapArrayBufferWithHeader(buffer) {
-    // Use type 1 for raw array buffer.
-    return wrapMessageWithHeader(new Uint8Array(buffer), 2);
+    return wrapMessageWithHeader(new Uint8Array(buffer), MESSAGE_TYPES.ARRAY_BUFFER);
 }
 
 function isWrapped(buffer) {
@@ -683,8 +687,6 @@ function isWrapped(buffer) {
     return true;
 }
 
-// New header wrapping function that includes a type indicator.
-// type: 0 => string, 1=> object 2 => raw ArrayBuffer. You can add more types as needed.
 function wrapMessageWithHeader(buffer, type) {
     // Create a 5-byte header: 1 byte for type, 4 bytes for payload length.
     const header = new ArrayBuffer(5);
@@ -700,21 +702,23 @@ function wrapMessageWithHeader(buffer, type) {
 function sendMessage(server, message, to = null) {
 
     if(!server || !server.connected) {
+        console.log("not connected!");
         return;
     }
 
     let sendData = null;
     let chunks = [];
-    let useStrType = 0;
+    let useStrType = MESSAGE_TYPES.STRING;
 
     if(!message) {
+        console.log("no message!");
         return;
     }
 
     // If message is an object (except ArrayBuffer), stringify it.
     if (typeof message === "object" && !(message instanceof ArrayBuffer)) {
         message = JSON.stringify(message);
-        useStrType = 1;
+        useStrType = MESSAGE_TYPES.OBJECT;
     }
     
     // If string, encode it (will be wrapped with type indicator 0).
@@ -724,8 +728,12 @@ function sendMessage(server, message, to = null) {
     
     // If it's an ArrayBuffer, wrap it if not already wrapped (with type indicator 1).
     if (message instanceof ArrayBuffer && !isWrapped(message)) {
+        console.log("WRAP BUFFER!");
         message = wrapArrayBufferWithHeader(message);
     }
+
+    console.log("SEND MESSAE");
+    console.log(message);
 
     try {
         sendData = message;
@@ -1085,12 +1093,12 @@ function onMessageFromRtc(server, from, chunk) {
         }
         
         // Process based on type.
-        if (senderBuffer.type === 0) {
+        if (senderBuffer.type == MESSAGE_TYPES.STRING || senderBuffer.type == MESSAGE_TYPES.OBJECT) {
             // For JSON/string messages.
             const decoder = new TextDecoder();
             const jsonString = decoder.decode(fullBuffer);
 
-            if(senderBuffer.type == 1) {
+            if(senderBuffer.type == MESSAGE_TYPES.OBJECT) {
                 // If it's an object, decode it.
                 try {
                     const obj = JSON.parse(jsonString);
@@ -1102,7 +1110,7 @@ function onMessageFromRtc(server, from, chunk) {
                 // If it's a string, handle it directly.
                 handleDecodedMessage(server, from, jsonString);
             }
-        } else if (senderBuffer.type === 2) {
+        } else if (senderBuffer.type === MESSAGE_TYPES.ARRAY_BUFFER) {
             // For raw ArrayBuffer messages.
             handleDecodedMessage(server, from, fullBuffer.buffer);
         }
