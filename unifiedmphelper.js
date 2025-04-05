@@ -702,7 +702,6 @@ function wrapMessageWithHeader(buffer, type) {
 function sendMessage(server, message, to = null) {
 
     if(!server || !server.connected) {
-        console.log("not connected!");
         return;
     }
 
@@ -711,7 +710,6 @@ function sendMessage(server, message, to = null) {
     let useStrType = MESSAGE_TYPES.STRING;
 
     if(!message) {
-        console.log("no message!");
         return;
     }
 
@@ -728,12 +726,8 @@ function sendMessage(server, message, to = null) {
     
     // If it's an ArrayBuffer, wrap it if not already wrapped (with type indicator 1).
     if (message instanceof ArrayBuffer && !isWrapped(message)) {
-        console.log("WRAP BUFFER!");
         message = wrapArrayBufferWithHeader(message);
     }
-
-    console.log("SEND MESSAE");
-    console.log(message);
 
     try {
         sendData = message;
