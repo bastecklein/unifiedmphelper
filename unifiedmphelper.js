@@ -1053,6 +1053,11 @@ async function beginPeerConnection(lobby, serverId, remoteClient) {
 }
 
 function onMessageFromRtc(server, from, chunk) {
+    if (!(chunk instanceof ArrayBuffer)) {
+        console.warn("Received data is not an ArrayBuffer. Ignoring:", chunk);
+        return;
+    }
+    
     if(!server || !server.listener) {
         return;
     }
